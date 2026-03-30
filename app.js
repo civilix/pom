@@ -315,21 +315,14 @@ function startPuddingSpawner() {
   const tick = () => {
     if (!isRunning) return;
 
-    const progress = 1 - remainingSeconds / totalSeconds; // 0 -> 1
-    // 目标数量随进度增长：开始1个，结束时约60个
-    const targetCount = Math.floor(1 + 59 * Math.pow(progress, 1.5));
+    spawnPudding();
 
-    if (puddings.length < targetCount) {
-      spawnPudding();
-    }
-
-    // 检查频率：前期慢，后期快
-    const interval = Math.max(300, 5000 * (1 - progress));
-    puddingSpawnTimer = setTimeout(tick, interval);
+    // 每分钟加一个布丁狗
+    puddingSpawnTimer = setTimeout(tick, 60000);
   };
 
-  // 首次稍微延迟一下（第一个已经在 startTimer 里生成了）
-  puddingSpawnTimer = setTimeout(tick, 3000);
+  // 首次延迟一分钟（第一个已经在 startTimer 里生成了）
+  puddingSpawnTimer = setTimeout(tick, 60000);
 }
 
 function stopPuddingSpawner() {
