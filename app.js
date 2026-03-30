@@ -60,6 +60,7 @@ function startTimer() {
   silenceStart = null;
   clearPuddings();
 
+  requestWakeLock();
   startMicrophone();
   spawnPudding();
   startPuddingSpawner();
@@ -117,6 +118,7 @@ function stopTimer() {
   resetBtn.classList.add('hidden');
   micStatus.textContent = '';
   micStatus.className = '';
+  releaseWakeLock();
   stopMicrophone();
   stopPuddingSpawner();
   stopBouncingAnimation();
@@ -130,7 +132,8 @@ function pauseTimer() {
   clearInterval(timerInterval);
   timerInterval = null;
   stopPuddingSpawner();
-  stopBouncingAnimation();
+  // 静音惩罚：50%布丁狗爆体而亡
+  killPuddings(0.5);
   pauseOverlay.classList.remove('hidden');
 }
 
@@ -272,6 +275,33 @@ function clearPuddings() {
   puddingContainer.innerHTML = '';
 }
 
+// 布丁狗爆体而亡：随机杀死指定比例的布丁狗，带爆炸动画
+function killPuddings(ratio) {
+  const count = Math.floor(puddings.length * ratio);
+  if (count === 0) return;
+
+  // 随机选出要杀死的索引
+  const indices = [];
+  const pool = puddings.map((_, i) => i);
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const pick = Math.floor(Math.random() * pool.length);
+    indices.push(pool[pick]);
+    pool.splice(pick, 1);
+  }
+
+  // 从大到小排序，方便从后往前删
+  indices.sort((a, b) => b - a);
+
+  for (const idx of indices) {
+    const p = puddings[idx];
+    // 爆炸动画
+    p.el.classList.add('pudding-explode');
+    const el = p.el;
+    el.addEventListener('animationend', () => el.remove());
+    puddings.splice(idx, 1);
+  }
+}
+
 function startBouncingAnimation() {
   stopBouncingAnimation();
 
@@ -398,18 +428,32 @@ if ('serviceWorker' in navigator) {
 }
 
 // 防止手机息屏
+let wakeLock = null;
+
 async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
   try {
-    if ('wakeLock' in navigator) {
-      await navigator.wakeLock.request('screen');
-    }
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
   } catch (e) {
     // 忽略
   }
 }
 
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
+
+// 页面可见性变化
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && isRunning) {
+  if (document.hidden && isRunning) {
+    // 切走了！惩罚：20%布丁狗爆体而亡
+    killPuddings(0.2);
+  }
+  if (!document.hidden && (isRunning || isPaused)) {
     requestWakeLock();
   }
 });
