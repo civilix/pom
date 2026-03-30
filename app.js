@@ -10,6 +10,7 @@ let totalSeconds = config.duration * 60;
 let remainingSeconds = totalSeconds;
 let timerInterval = null;
 let isRunning = false;
+let isPaused = false;
 let audioContext = null;
 let analyser = null;
 let micStream = null;
@@ -36,6 +37,7 @@ const thresholdInput = document.getElementById('threshold-input');
 const thresholdValue = document.getElementById('threshold-value');
 const settingsSave = document.getElementById('settings-save');
 const settingsCancel = document.getElementById('settings-cancel');
+const resetBtn = document.getElementById('reset-btn');
 const puddingContainer = document.getElementById('pudding-container');
 
 // --- 倒计时显示 ---
@@ -50,22 +52,23 @@ function updateDisplay() {
 
 // --- 倒计时逻辑 ---
 function startTimer() {
-  if (isRunning) {
-    stopTimer();
-    return;
-  }
-
   isRunning = true;
-  startBtn.textContent = '停止';
+  isPaused = false;
+  startBtn.textContent = '暂停';
   startBtn.classList.add('running');
+  resetBtn.classList.add('hidden');
   silenceStart = null;
   clearPuddings();
 
   startMicrophone();
-  spawnPudding(); // 第一个布丁狗
+  spawnPudding();
   startPuddingSpawner();
   startBouncingAnimation();
 
+  runCountdown();
+}
+
+function runCountdown() {
   timerInterval = setInterval(() => {
     remainingSeconds--;
     updateDisplay();
@@ -77,12 +80,41 @@ function startTimer() {
   }, 1000);
 }
 
+function manualPause() {
+  isRunning = false;
+  isPaused = true;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  stopPuddingSpawner();
+  stopBouncingAnimation();
+  startBtn.textContent = '继续';
+  startBtn.classList.remove('running');
+  startBtn.classList.add('paused');
+  resetBtn.classList.remove('hidden');
+}
+
+function manualResume() {
+  isRunning = true;
+  isPaused = false;
+  silenceStart = null;
+  startBtn.textContent = '暂停';
+  startBtn.classList.remove('paused');
+  startBtn.classList.add('running');
+  resetBtn.classList.add('hidden');
+  startPuddingSpawner();
+  startBouncingAnimation();
+  runCountdown();
+}
+
 function stopTimer() {
   isRunning = false;
+  isPaused = false;
   clearInterval(timerInterval);
   timerInterval = null;
   startBtn.textContent = '开始专注';
   startBtn.classList.remove('running');
+  startBtn.classList.remove('paused');
+  resetBtn.classList.add('hidden');
   micStatus.textContent = '';
   micStatus.className = '';
   stopMicrophone();
@@ -105,20 +137,15 @@ function pauseTimer() {
 function resumeTimer() {
   pauseOverlay.classList.add('hidden');
   isRunning = true;
+  isPaused = false;
   silenceStart = null;
+  startBtn.textContent = '暂停';
+  startBtn.classList.add('running');
+  startBtn.classList.remove('paused');
 
   startPuddingSpawner();
   startBouncingAnimation();
-
-  timerInterval = setInterval(() => {
-    remainingSeconds--;
-    updateDisplay();
-    checkMicSilence();
-
-    if (remainingSeconds <= 0) {
-      onComplete();
-    }
-  }, 1000);
+  runCountdown();
 }
 
 function onComplete() {
@@ -348,8 +375,17 @@ settingsCancel.addEventListener('click', () => {
 });
 
 // --- 按钮事件 ---
-startBtn.addEventListener('click', startTimer);
+startBtn.addEventListener('click', () => {
+  if (isRunning) {
+    manualPause();
+  } else if (isPaused) {
+    manualResume();
+  } else {
+    startTimer();
+  }
+});
 resumeBtn.addEventListener('click', resumeTimer);
+resetBtn.addEventListener('click', stopTimer);
 completeBtn.addEventListener('click', () => {
   completeOverlay.classList.add('hidden');
   stopBouncingAnimation();

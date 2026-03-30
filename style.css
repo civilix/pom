@@ -69,8 +69,14 @@ body {
   height: 1.2em;
 }
 
-#start-btn {
+#btn-group {
+  display: flex;
+  gap: 0.8rem;
   margin-top: 2rem;
+  align-items: center;
+}
+
+#start-btn {
   padding: 0.8em 2.5em;
   font-size: 1.1rem;
   background: rgba(255, 255, 255, 0.1);
@@ -89,6 +95,27 @@ body {
 #start-btn.running {
   background: rgba(255, 80, 80, 0.15);
   border-color: rgba(255, 80, 80, 0.3);
+}
+
+#start-btn.paused {
+  background: rgba(80, 200, 80, 0.15);
+  border-color: rgba(80, 200, 80, 0.3);
+}
+
+#reset-btn {
+  padding: 0.8em 1.5em;
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2em;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+#reset-btn:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: #fff;
 }
 
 /* 设置按钮 */
