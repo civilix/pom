@@ -1,8 +1,8 @@
 // --- 配置 ---
 const config = {
-  duration: parseInt(localStorage.getItem('pom-duration') || '180'),      // 分钟
-  silenceMinutes: parseInt(localStorage.getItem('pom-silence') || '3'),   // 静音检测分钟
-  threshold: parseInt(localStorage.getItem('pom-threshold') || '10'),     // 声音阈值 (0-100)
+  duration: parseInt(localStorage.getItem('pom-duration') || '180'),
+  silenceMinutes: parseInt(localStorage.getItem('pom-silence') || '3'),
+  threshold: parseInt(localStorage.getItem('pom-threshold') || '10'),
 };
 
 // --- 状态 ---
@@ -14,8 +14,9 @@ let audioContext = null;
 let analyser = null;
 let micStream = null;
 let silenceStart = null;
-let puddingCount = 0;
-let puddingInterval = null;
+let puddings = []; // 存活的布丁狗 { el, x, y, vx, vy, size, angle, rotSpeed }
+let animFrameId = null;
+let puddingSpawnTimer = null;
 
 // --- DOM ---
 const hoursEl = document.getElementById('hours');
@@ -58,11 +59,12 @@ function startTimer() {
   startBtn.textContent = '停止';
   startBtn.classList.add('running');
   silenceStart = null;
-  puddingCount = 0;
-  puddingContainer.innerHTML = '';
+  clearPuddings();
 
   startMicrophone();
+  spawnPudding(); // 第一个布丁狗
   startPuddingSpawner();
+  startBouncingAnimation();
 
   timerInterval = setInterval(() => {
     remainingSeconds--;
@@ -85,9 +87,10 @@ function stopTimer() {
   micStatus.className = '';
   stopMicrophone();
   stopPuddingSpawner();
+  stopBouncingAnimation();
   remainingSeconds = totalSeconds;
   updateDisplay();
-  puddingContainer.innerHTML = '';
+  clearPuddings();
 }
 
 function pauseTimer() {
@@ -95,6 +98,7 @@ function pauseTimer() {
   clearInterval(timerInterval);
   timerInterval = null;
   stopPuddingSpawner();
+  stopBouncingAnimation();
   pauseOverlay.classList.remove('hidden');
 }
 
@@ -104,6 +108,7 @@ function resumeTimer() {
   silenceStart = null;
 
   startPuddingSpawner();
+  startBouncingAnimation();
 
   timerInterval = setInterval(() => {
     remainingSeconds--;
@@ -128,9 +133,9 @@ function onComplete() {
   micStatus.className = '';
   completeOverlay.classList.remove('hidden');
 
-  // 完成时撒满布丁狗
-  for (let i = 0; i < 30; i++) {
-    setTimeout(() => spawnPudding(), i * 100);
+  // 完成时大量追加布丁狗
+  for (let i = 0; i < 40; i++) {
+    setTimeout(() => spawnPudding(), i * 80);
   }
 }
 
@@ -164,7 +169,7 @@ function stopMicrophone() {
 }
 
 function getCurrentVolume() {
-  if (!analyser) return 100; // 没有麦克风时不触发静音
+  if (!analyser) return 100;
   const data = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(data);
   let sum = 0;
@@ -200,52 +205,81 @@ function checkMicSilence() {
   }
 }
 
-// --- 布丁狗 ---
-const PUDDING_EMOJIS = ['🍮'];
-// 布丁狗 SVG（简笔画风格）
-function createPuddingSVG() {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 100 100');
-  svg.setAttribute('width', '48');
-  svg.setAttribute('height', '48');
-  svg.innerHTML = `
-    <!-- 帽子/贝雷帽 -->
-    <ellipse cx="50" cy="30" rx="32" ry="12" fill="#8B4513"/>
-    <!-- 头 -->
-    <circle cx="50" cy="48" r="28" fill="#FFD966"/>
-    <!-- 耳朵 -->
-    <ellipse cx="28" cy="34" rx="8" ry="12" fill="#8B4513" transform="rotate(-15 28 34)"/>
-    <ellipse cx="72" cy="34" rx="8" ry="12" fill="#8B4513" transform="rotate(15 72 34)"/>
-    <!-- 眼睛 -->
-    <circle cx="40" cy="48" r="3" fill="#333"/>
-    <circle cx="60" cy="48" r="3" fill="#333"/>
-    <!-- 鼻子 -->
-    <ellipse cx="50" cy="55" rx="4" ry="3" fill="#8B4513"/>
-    <!-- 嘴巴 -->
-    <path d="M44 60 Q50 66 56 60" stroke="#8B4513" stroke-width="1.5" fill="none"/>
-    <!-- 腮红 -->
-    <ellipse cx="34" cy="56" rx="5" ry="3" fill="rgba(255,150,150,0.5)"/>
-    <ellipse cx="66" cy="56" rx="5" ry="3" fill="rgba(255,150,150,0.5)"/>
-  `;
-  return svg;
-}
-
+// --- 布丁狗弹跳系统 ---
 function spawnPudding() {
+  const size = 40 + Math.random() * 40; // 40-80px
   const el = document.createElement('div');
   el.className = 'pudding';
+  el.style.width = size + 'px';
+  el.style.height = size + 'px';
 
-  el.appendChild(createPuddingSVG());
+  const img = document.createElement('img');
+  img.src = 'pom1.svg';
+  img.alt = '布丁狗';
+  el.appendChild(img);
 
-  const scale = 0.6 + Math.random() * 1.2;
-  el.style.setProperty('--scale', scale);
-  el.style.left = Math.random() * 92 + '%';
-  el.style.animationDuration = (8 + Math.random() * 12) + 's';
-  el.style.animationDelay = (-Math.random() * 5) + 's';
-  el.style.opacity = 0.6 + Math.random() * 0.4;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
 
+  // 随机速度，方向随机
+  const speed = 0.8 + Math.random() * 1.2;
+  const angle = Math.random() * Math.PI * 2;
+
+  const pud = {
+    el,
+    x: Math.random() * (W - size),
+    y: Math.random() * (H - size),
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    size,
+    angle: Math.random() * 360,
+    rotSpeed: (Math.random() - 0.5) * 2, // -1 ~ 1 度/帧
+  };
+
+  puddings.push(pud);
   puddingContainer.appendChild(el);
+}
 
-  el.addEventListener('animationend', () => el.remove());
+function clearPuddings() {
+  puddings = [];
+  puddingContainer.innerHTML = '';
+}
+
+function startBouncingAnimation() {
+  stopBouncingAnimation();
+
+  const W = () => window.innerWidth;
+  const H = () => window.innerHeight;
+
+  function frame() {
+    const w = W();
+    const h = H();
+
+    for (const p of puddings) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.angle += p.rotSpeed;
+
+      // 边界反弹
+      if (p.x <= 0) { p.x = 0; p.vx = Math.abs(p.vx); }
+      if (p.x + p.size >= w) { p.x = w - p.size; p.vx = -Math.abs(p.vx); }
+      if (p.y <= 0) { p.y = 0; p.vy = Math.abs(p.vy); }
+      if (p.y + p.size >= h) { p.y = h - p.size; p.vy = -Math.abs(p.vy); }
+
+      p.el.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${p.angle}deg)`;
+    }
+
+    animFrameId = requestAnimationFrame(frame);
+  }
+
+  animFrameId = requestAnimationFrame(frame);
+}
+
+function stopBouncingAnimation() {
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
 }
 
 function startPuddingSpawner() {
@@ -253,29 +287,28 @@ function startPuddingSpawner() {
 
   const tick = () => {
     if (!isRunning) return;
-    // 进度 0->1，越接近完成越多布丁狗
-    const progress = 1 - remainingSeconds / totalSeconds;
-    // 生成频率：开始时很少，结束时很密集
-    const baseInterval = 8000; // 最初间隔8秒
-    const minInterval = 300;   // 最密集间隔0.3秒
-    const interval = baseInterval - (baseInterval - minInterval) * Math.pow(progress, 2);
 
-    // 接近结束时一次生成多个
-    const count = progress > 0.8 ? Math.ceil((progress - 0.8) * 15) : 1;
-    for (let i = 0; i < count; i++) {
+    const progress = 1 - remainingSeconds / totalSeconds; // 0 -> 1
+    // 目标数量随进度增长：开始1个，结束时约60个
+    const targetCount = Math.floor(1 + 59 * Math.pow(progress, 1.5));
+
+    if (puddings.length < targetCount) {
       spawnPudding();
     }
 
-    puddingInterval = setTimeout(tick, interval);
+    // 检查频率：前期慢，后期快
+    const interval = Math.max(300, 5000 * (1 - progress));
+    puddingSpawnTimer = setTimeout(tick, interval);
   };
 
-  tick();
+  // 首次稍微延迟一下（第一个已经在 startTimer 里生成了）
+  puddingSpawnTimer = setTimeout(tick, 3000);
 }
 
 function stopPuddingSpawner() {
-  if (puddingInterval) {
-    clearTimeout(puddingInterval);
-    puddingInterval = null;
+  if (puddingSpawnTimer) {
+    clearTimeout(puddingSpawnTimer);
+    puddingSpawnTimer = null;
   }
 }
 
@@ -319,9 +352,10 @@ startBtn.addEventListener('click', startTimer);
 resumeBtn.addEventListener('click', resumeTimer);
 completeBtn.addEventListener('click', () => {
   completeOverlay.classList.add('hidden');
+  stopBouncingAnimation();
+  clearPuddings();
   remainingSeconds = totalSeconds;
   updateDisplay();
-  puddingContainer.innerHTML = '';
 });
 
 // --- 初始化 ---
@@ -331,10 +365,10 @@ updateDisplay();
 
 // 注册 Service Worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js');
+  navigator.serviceWorker.register('./sw.js');
 }
 
-// 防止手机息屏（如果支持）
+// 防止手机息屏
 async function requestWakeLock() {
   try {
     if ('wakeLock' in navigator) {
